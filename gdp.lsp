@@ -352,37 +352,36 @@
 (defun c:gdp (/ data file stations dist i shedule)
   (if
     (and (setq file (getfiled "Select CSV File"
-			      "" ;"F:\\Text\\acad_support\\stan\\module\\5.csv"
-			      "csv" 8)) (setq data (LM:readcsv file)))
-     (progn
-       (princ "\n(")
-       (foreach	line data
-	 (princ "\n    ")
-	 (prin1 line)
-       )
-       (princ "\n)")
-     )
-  )
-  (setq	stations  nil
-	dist	  nil
-	TabHeader (car data)
-	i	  1
-  )
-  (while (< i (length TabHeader))
-    (setq stations (cons (nth i TabHeader) stations)
-	  dist	   (cons (nth (1+ i) TabHeader) dist)
-	  i	   (+ 2 i)
+			      ""	;"F:\\Text\\acad_support\\stan\\module\\5.csv"
+			      "csv"
+			      8
+		    )
+	 )
+	 (setq data (LM:readcsv file))
     )
-  )
-  (setq	stations (reverse stations)
-	dist	 (reverse
-		   (cons 0 (ProgressiveTotal (mapcar 'atoi (cdr dist))))
-		 )
-  )
-  (DrawGrid stations dist)
-  (setq shedule (cdr data))
-  (foreach x shedule
-    (DrawTrain x dist)
+     (progn
+       (setq stations  nil
+	     dist      nil
+	     TabHeader (car data)
+	     i	       1
+       )
+       (while (< i (length TabHeader))
+	 (setq stations	(cons (nth i TabHeader) stations)
+	       dist	(cons (nth (1+ i) TabHeader) dist)
+	       i	(+ 2 i)
+	 )
+       )
+       (setq stations (reverse stations)
+	     dist     (reverse
+			(cons 0 (ProgressiveTotal (mapcar 'atoi (cdr dist))))
+		      )
+       )
+       (DrawGrid stations dist)
+       (setq shedule (cdr data))
+       (foreach	x shedule
+	 (DrawTrain x dist)
+       )
+     )
   )
   (print)
 )
