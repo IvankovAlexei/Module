@@ -1,6 +1,14 @@
+;;;=================================================
+;;; Построение графика движения поездов для участка 
+;;; по данным таблицы *.csv                         
+;;;=================================================
+
 (command "_style" "standard" "simplex.shx" "" 0.75 "" "" "" "")
 (if (= (tblsearch "ltype" "ACAD_ISO02W100" t) nil)
   (command "_.linetype"	"_Load"	"ACAD_ISO02W100" "acadiso.lin" "")
+)
+(if (= (tblsearch "ltype" "ACAD_ISO04W100" t) nil)
+  (command "_.linetype"	"_Load"	"ACAD_ISO04W100" "acadiso.lin" "")
 )
 
 ;;; s = string d = delimiter p = position delimiter (thanx Lee Mac)
@@ -83,7 +91,7 @@
 ;;; *           Отрисовка полилинии по списку точек               *
 ;;; ***************************************************************
 
-(defun LWPoly (lst color cls thikn / exv)
+(defun LWPoly (lst color cls thikn LT / exv)
 					; Draw lwpolyline in current UCS
 					; version for pre-visual lisp.
 					; lst - list of points ((X1 Y1)(X2 Y2) ... (Xn Yn)) in current UCS
@@ -91,6 +99,7 @@
   (setq exv (trans (list 0 0 1) 1 0 T))
   (entmakex
     (append (list (cons 0 "LWPOLYLINE")
+		  (cons 6 LT)		  
 		  (cons 38 (caddr (trans (car lst) 1 exv)))
 		  (cons 100 "AcDbEntity")
 		  (cons 100 "AcDbPolyline")
@@ -139,8 +148,8 @@
 	(entmake (list '(0 . "TEXT")
 		       (cons 1 (itoa (/ i 60)))
 		       (cons 8 "Сетка")
-		       (cons 10 p1)
-		       (cons 11 p1)
+		       (cons 10 (polar p1 (- (/ pi 2.0)) 2))
+		       (cons 11 (polar p1 (- (/ pi 2.0)) 2))
 		       (cons 40 7.0)
 		       (cons 41 0.75)
 		       (cons 72 1)
@@ -204,80 +213,25 @@
   )
 )
 
-(defun drtext (lst / even odd a pt tjh tjv i minute)
-  (setq	i    0
-	even (> (car (last lst)) (car (car lst)))
-	odd  (not even)
-  )
-  (foreach a lst
-    (setq minute (rem (car a) 10)
-	  pt	 a
-    )
-    (cond
-      ((and even
-	    (or (= i 0) (< (cadr pt) (cadr (nth (1+ i) lst))))
-       )
-       (setq tjh 2
-	     tjv 1
-       )
-      )
-      (even
-       (setq tjh 0
-	     tjv 3
-       )
-      )
-      ((and
-	 odd
-	 (or (= i 0) (equal (cadr pt) (cadr (nth (1- i) lst)) 0.01))
-       )
-       (setq tjh 0
-	     tjv 1
-       )
-      )
-      (t
-       (setq tjh 2
-	     tjv 3
-       )
-      )
-    )
-    (entmake (list '(0 . "TEXT")
-		   (cons 1 (itoa minute))
-		   (cons 10 pt)
-		   (cons 11 pt)
-		   (cons 40 5.0)
-		   (cons 41 0.75)
-		   (cons 72 tjh)
-		   (cons 73 tjv)
-	     )
-    )
-    (setq i (1+ i))
-  )
+(defun midpt (p1 p2)
+  (list (/ (+ (car p1) (car p2)) 2.0) (/ (+ (cadr p1) (cadr p2)) 2.0))
 )
-(defun DrawTrain (train	dist / lst TrNum i kv l	pt a ind p1 p2 pf lst1
-		  lst2)
+
+(defun DrawTrain (train	dist / lst TrNum i kv l	pt a ind p1 p2 pf lst1 lst2 tjv tjh minute even odd LineColor LineType ang)
   (setq	kv    (/ 900.0 (car dist))
 	TrNum (car train)
 	train (cdr train)
 	lst   nil
 	i     0
+	pf nil ; Обнуляем переменную, отвечающую за переход через начало (конец) суток 
   )
   (while (< i (length train))
-    (setq l   (mapcar 'atoi (SplitStr (nth i train) ":"))
-	  lst (cons
-		(list (+ (* (car l) 60) (cadr l)) (* (nth (/ i 2) dist) kv))
-		lst
-	      )
-    )
-    (if	(and (/= (nth (1+ i) train) "") (/= (nth (1+ i) train) nil))
-      (setq l	(mapcar 'atoi (SplitStr (nth (1+ i) train) ":"))
+    (if	(and (/= (nth i train) "") (/= (nth i train) nil))
+      (setq l	(mapcar 'atoi (SplitStr (nth i train) ":"))
 	    lst	(cons (list (+ (* (car l) 60) (cadr l))
-			    (* (nth (/ i 2) dist) kv)
-		      )
-		      lst
-		)
-      )
+			    (* (nth (/ i 2) dist) kv)) lst))
     )
-    (setq i (+ 2 i))
+    (setq i (1+ i))
   )
   (setq	i   0
 	ind nil
@@ -301,13 +255,24 @@
     )
     (setq i (1+ i))
   )
+  (setq LineColor
+	 (cond
+	   ((< (atoi TrNum) 1000) 1)
+	   ((< (atoi TrNum) 6000) 0)
+	   (t 74)
+	 )
+	LineType
+	 (cond
+	   ((and (> (atoi TrNum) 3400) (< (atoi TrNum) 4000)) "ACAD_ISO04W100")
+	   ((and (> (atoi TrNum) 4000) (< (atoi TrNum) 4500)) "ACAD_ISO02W100")
+	   (t "ByLayer")
+	 )
+  )
   (if (not pf)
+    ;;; Нитка полностью уложилась в текущие сутки безе перехода через 1440 (24 часа)
+    (LWPoly lst LineColor 0 50 LineType)
     (progn
-      (LWPoly lst 0 0 50)
-      (drtext lst) 
-
-    )
-    (progn
+      ;;; Поиск точки перехода через 1440, раззделение списка на два (в конце суток и в начале)
       (setq lst1 nil
 	    lst2 nil
 	    i	 0
@@ -319,27 +284,76 @@
 	)
 	(setq i (1+ i))
       )
-      (LWPoly (cons pf lst1) 0 0 50)
-      (LWPoly (append lst2 (list (polar pf 0.0 1440.0))) 0 0 50)
+      (if (< (car (car lst1)) (car (last lst2)))
+	(setq lst1 (cons pf lst1)
+	      lst2 (append lst2 (list (polar pf 0.0 1440.0))))
+	(setq lst1 (cons (polar pf 0.0 1440.0) lst1)
+	      lst2 (append lst2 (list pf)))
+      )	
+      (LWPoly lst1 LineColor 0 50 LineType)
+      (LWPoly lst2 LineColor 0 50 LineType)
     )
   )
+  ;;; Вывод минут на график
+  ;;; Определяем четный (нечетный) поезд
+  (setq	i    0
+	even (if (not pf)
+	       (> (car (last lst)) (car (car lst)))
+	       (< (car (last lst)) (car (car lst)))
+	     )  
+	odd  (not even)
+  )
+  ;;; Рассчитываем минуты от 0..9
+  (foreach a lst
+    (setq minute (rem (car a) 10)
+	  pt	 a)
+    ;;; Задаем выравнивание текста
+    (cond
+      ((and even (or (= i 0) (< (cadr pt) (cadr (nth (1+ i) lst)))))
+       (setq tjh 2 tjv 1 pt (polar pt pi 1.0)))
+      (even (setq tjh 0 tjv 3 pt (polar pt (* (/ 7.0 4.0) pi) 1.0)))
+      ((and odd (or (= i 0) (equal (cadr pt) (cadr (nth (1- i) lst)) 0.01)))
+       (setq tjh 0 tjv 1 pt (polar pt 0.0 1.0)))
+      (t (setq tjh 2 tjv 3 pt (polar pt (* (/ 5.0 4.0) pi) 1.0)))
+    )
+    (entmake (list '(0 . "TEXT")
+		   (cons 1 (itoa minute))
+		   (cons 10 pt)
+		   (cons 11 pt)
+		   (cons 40 5.0)
+		   (cons 41 0.75)
+		   (cons 62 LineColor)
+		   (cons 72 tjh)
+		   (cons 73 tjv)))
+    (setq i (1+ i))
+  )
+  ;;; Вывод номера поезда
+  (if even
+    (progn
+      (if pf (setq lst (reverse lst1)))      
+      (setq p1 (car lst) p2 (cadr lst)))
+    (progn
+      (if pf (setq lst (reverse lst2)))
+      (setq p1 (car (reverse lst)) p2 (cadr (reverse lst)))))
+  (setq pt (midpt p1 p2)
+	ang (angle p1 p2))
+  (entmake (list '(0 . "TEXT")
+		 (cons 1 TrNum)
+		 (cons 10 pt)
+		 (cons 11 pt)
+		 (cons 40 7.5)
+		 (cons 41 0.75)
+		 (cons 50 ang)
+		 (cons 62 LineColor)
+		 (cons 72 1)
+		 (cons 73 1)))  
 )
 
-
-
-(defun main (/ data file stations dist i shedule)
+(defun c:gdp (/ data file stations dist i shedule)
   (if
-    (and
-					;(setq file (getfiled "Select CSV File" "D:\\aivankov\\stan\\modules\\ГДП\\1.csv" "csv" 8))
-      (setq
-	file (getfiled "Select CSV File"
-		       "F:\\Text\\acad_support\\stan\\module\\1.csv"
-		       "csv"
-		       8
-	     )
-      )
-      (setq data (LM:readcsv file))
-    )
+    (and (setq file (getfiled "Select CSV File"
+			      "" ;"F:\\Text\\acad_support\\stan\\module\\5.csv"
+			      "csv" 8)) (setq data (LM:readcsv file)))
      (progn
        (princ "\n(")
        (foreach	line data
